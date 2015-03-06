@@ -2,9 +2,11 @@
 // Arduino Powered RC Car
 // 12th Aug 2012
 // Updated 02/04/2013
+// Updated 02/09/2013 -- Added Bluetooth connection 
 
 #include <NewPing.h>
 #include <Servo.h>
+#include <SoftwareSerial.h>
 
 const int TRIGGER_PIN = 7;     // Arduino pin tied to trigger pin on ping sensor.
 const int ECHO_PIN =  8;       // Arduino pin tied to echo pin on ping sensor.
@@ -22,6 +24,8 @@ const int centAng = 56;          // Straight Ahead
 const int HEARTBEAT = 13;        // Ardunio pin tied to internal led
 const int sensorPin = A0;         // TM36 Temp Sensor data pin 
 
+
+
 int LEFT_LOCK = 40;
 int RIGHT_LOCK = 72;
 int angle = 56;            // servo for loop postion
@@ -34,6 +38,8 @@ int advTemp;
 #define aref_voltage 3.3
 
 Servo steeringServo;            // create servo object to control servo
+SoftwareSerial BTSerial(16,15); // RX on A1, TX on A2
+
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);     // NewPing setup of pins and maximum distance.
 
 unsigned int pingSpeed = 25;    // How frequently are we going to send out a ping (in milliseconds). 50ms would be 20 times a second.
@@ -55,31 +61,15 @@ void setup(void)
   
   // start serial port
   Serial.begin(9600);
+  BTSerial.begin(9600);
+  
   steeringServo.attach(STEERING_SERVO,1400,1514);  // attaches the servo on pin 11 to the servo object
   steeringServo.write(centAng); // center the servo 
-  analogReference(EXTERNAL); 
+  //analogReference(INTERNAL); 
 } 
     
 void loop(void)
 { 
-  for(i = 0; i<=7; i++){
-    tempReading = analogRead(sensorPin);
-    float voltage = (aref_voltage*tempReading)/ 1024.0;
-    float temperatureC = (voltage-0.5)*10;
-    samples[i] = temperatureC;
-    advTemp = advTemp + samples[i];
-    //Serial.print(temperatureC); 
-    //Serial.println(" AdvTemp ") + advTemp;
-    delay(1000);
-  }
-  
-  advTemp = advTemp/8.0;
-  Serial.print(advTemp); Serial.println(" degrees C");
-  
-  //float temperatureF = (temperatureC * 9.0 / 5.0) + 32.0;
-  //Serial.print(temperatureF); Serial.println(" degrees F");
- delay(500);
-   
   if (Serial.available() > 0) {
     int ch = Serial.read();
         
@@ -151,7 +141,11 @@ void loop(void)
       Serial.println("NO INPUT");
     }    
   }
-   
+  
+  BTSerial.println(readVcc(), DEC);
+
+  getCarTemp(); 
+  
     
   //heartbeat
   digitalWrite(led, HIGH);   // turn the LED on (HIGH is the voltage level)
@@ -165,14 +159,47 @@ void loop(void)
     pingTimer += pingSpeed;    // Set the next ping time.
     sonar.ping_timer(echoCheck); // Send out the ping, calls "echoCheck" function every 24uS where you can check the ping status.
   }
-   // function to show temperatures
-   // call sensors.requestTemperatures() to issue a global temperature 
-   // request to all devices on the bus
-   //sensors.requestTemperatures(); // Send the command to get temperatures    
-   //printTemperature(tempDeviceAddress);  
     
 }  //end of loop
 
+long readVcc() {
+  long result;
+  // Read 1.1V reference against AVcc
+  ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+  delay(2); // Wait for Vref to settle
+  ADCSRA |= _BV(ADSC); // Convert
+  while (bit_is_set(ADCSRA,ADSC));
+  result = ADCL;
+  result |= ADCH<<8;
+  result = 1125300L / result; // Back-calculate AVcc in mV 1126400L
+  //result = internal1.1Ref = 1.1 * 7.2 / result;
+  result = result/1000; //conver
+  return result;
+}
+
+
+void getCarTemp()
+{
+   for(i = 0; i<=7; i++){
+     tempReading = analogRead(sensorPin);
+     Serial.print("A0 :"); Serial.println(tempReading);
+     float voltage = (aref_voltage*tempReading)/ 1023.0;
+     float temperatureC = (voltage-0.5)*10;
+     samples[i] = temperatureC;
+     advTemp = advTemp + samples[i];
+     Serial.print(temperatureC); 
+     Serial.println(" AdvTemp ") + advTemp;
+    
+     Serial.print("Volt: "); Serial.println(voltage);
+     delay(1000);
+   }
+  advTemp = advTemp/8.0;
+  //Serial.print(advTemp); Serial.println(" degrees C");
+  BTSerial.print(advTemp); BTSerial.println(" ºC");
+  //float temperatureF = (temperatureC * 9.0 / 5.0) + 32.0;
+  //Serial.print(temperatureF); Serial.println(" degrees F");
+  delay(500);
+  }
 
 void echoCheck() { // Timer2 interrupt calls this function every 24uS where you can check the ping status.
   // Don't do anything here!
@@ -210,13 +237,5 @@ void echoCheck() { // Timer2 interrupt calls this function every 24uS where you 
 }
 
  
-// function to print a device address
-//void printAddress(DeviceAddress deviceAddress)
-//{
-  //for (uint8_t i = 0; i < 8; i++)
-  //{
-    //if (deviceAddress[i] < 16) Serial.print("0");
-    //Serial.print(deviceAddress[i], HEX);
-  //}
-//}
+
 
